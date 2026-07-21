@@ -211,24 +211,13 @@
 
 <div id="setup" style="display:none;">
   <div class="setup-box">
-    <b>One-time setup</b> — paste your Firebase project details below (from Firebase Console → Project Settings → Your apps → SDK setup and configuration). This is saved in this browser only; you'll do this once per device.
+    <b>Welcome!</b> A private tracker has been created just for you on this device. Nobody else can see your entries. If you want to use this on a second device of your own (e.g. phone + laptop), go to the <b>Budget</b> tab after loading and copy your personal link code to enter there.
   </div>
   <div class="card">
-    <label>apiKey</label>
-    <input type="text" id="cfg-apiKey" placeholder="AIzaSy...">
-    <label>authDomain</label>
-    <input type="text" id="cfg-authDomain" placeholder="yourproject.firebaseapp.com">
-    <label>projectId</label>
-    <input type="text" id="cfg-projectId" placeholder="yourproject">
-    <label>storageBucket</label>
-    <input type="text" id="cfg-storageBucket" placeholder="yourproject.appspot.com">
-    <label>messagingSenderId</label>
-    <input type="text" id="cfg-messagingSenderId" placeholder="1234567890">
-    <label>appId</label>
-    <input type="text" id="cfg-appId" placeholder="1:1234567890:web:abcdef">
-    <label>A shared code (make one up — same code on every device you use)</label>
-    <input type="text" id="cfg-syncCode" placeholder="e.g. samuel-tracker-2026">
-    <button class="primary" id="saveConfig">Connect & Continue</button>
+    <button class="primary" id="startFresh">Start My Private Tracker</button>
+    <label style="margin-top:18px;">Already have a code from another device of yours?</label>
+    <input type="text" id="cfg-syncCode" placeholder="paste your code here">
+    <button class="primary" id="saveConfig" style="background:var(--card-2); color:var(--text); border:1px solid var(--border);">Use This Code Instead</button>
   </div>
 </div>
 
@@ -321,6 +310,13 @@
     <div class="card">
       <div id="budgetSummary"></div>
     </div>
+
+    <div class="card">
+      <label>Your personal link code</label>
+      <div class="sub" style="margin-bottom:8px;">To use this on another device of your own, open this same site there and paste this code in.</div>
+      <input type="text" id="myCode" readonly style="font-family:monospace; font-size:12px;">
+      <button class="primary" id="copyCode" style="margin-top:10px;">Copy Code</button>
+    </div>
   </div>
 
 </div>
@@ -335,6 +331,23 @@ let db = null;
 let docRef = null;
 let suppressNextSnapshot = false;
 
+// This project's Firebase config — shared by everyone who uses this app.
+// Each user's actual data is kept apart by their own private sync code below.
+const SHARED_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBrKNkK8sUvfIVciELppL7yk87vhEdpuLE",
+  authDomain: "savings-tracker-5e93e.firebaseapp.com",
+  projectId: "savings-tracker-5e93e",
+  storageBucket: "savings-tracker-5e93e.firebasestorage.app",
+  messagingSenderId: "1036351665941",
+  appId: "1:1036351665941:web:14c275d59136eb72ef9b1c"
+};
+
+function generatePrivateCode() {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function getLocalConfig() {
   try {
     const raw = localStorage.getItem('firebaseCfg');
@@ -343,14 +356,7 @@ function getLocalConfig() {
 }
 
 function initFirebase(cfg) {
-  firebase.initializeApp({
-    apiKey: cfg.apiKey,
-    authDomain: cfg.authDomain,
-    projectId: cfg.projectId,
-    storageBucket: cfg.storageBucket,
-    messagingSenderId: cfg.messagingSenderId,
-    appId: cfg.appId
-  });
+  firebase.initializeApp(SHARED_FIREBASE_CONFIG);
   db = firebase.firestore();
   docRef = db.collection('tracker').doc(cfg.syncCode);
 
@@ -373,24 +379,25 @@ function initFirebase(cfg) {
   });
 }
 
-document.getElementById('saveConfig').addEventListener('click', () => {
-  const cfg = {
-    apiKey: document.getElementById('cfg-apiKey').value.trim(),
-    authDomain: document.getElementById('cfg-authDomain').value.trim(),
-    projectId: document.getElementById('cfg-projectId').value.trim(),
-    storageBucket: document.getElementById('cfg-storageBucket').value.trim(),
-    messagingSenderId: document.getElementById('cfg-messagingSenderId').value.trim(),
-    appId: document.getElementById('cfg-appId').value.trim(),
-    syncCode: document.getElementById('cfg-syncCode').value.trim()
-  };
-  if (!cfg.apiKey || !cfg.projectId || !cfg.appId || !cfg.syncCode) {
-    alert('Please fill in all fields, including a sync code.');
-    return;
-  }
+function connectWithCode(syncCode) {
+  const cfg = { syncCode };
   localStorage.setItem('firebaseCfg', JSON.stringify(cfg));
   document.getElementById('setup').style.display = 'none';
   document.getElementById('loading').style.display = 'block';
   initFirebase(cfg);
+}
+
+document.getElementById('startFresh').addEventListener('click', () => {
+  connectWithCode(generatePrivateCode());
+});
+
+document.getElementById('saveConfig').addEventListener('click', () => {
+  const syncCode = document.getElementById('cfg-syncCode').value.trim();
+  if (!syncCode) {
+    alert('Please paste your code first, or click "Start My Private Tracker" instead.');
+    return;
+  }
+  connectWithCode(syncCode);
 });
 
 (function boot() {
@@ -424,7 +431,20 @@ function renderAll() {
   renderHistory();
   renderGoals();
   renderBudget();
+  const codeField = document.getElementById('myCode');
+  if (codeField && docRef) codeField.value = docRef.id;
 }
+
+document.getElementById('copyCode').addEventListener('click', () => {
+  const field = document.getElementById('myCode');
+  field.select();
+  navigator.clipboard.writeText(field.value).then(() => {
+    const btn = document.getElementById('copyCode');
+    const old = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }).catch(() => {});
+});
 
 function currentMonthKey(ts) {
   const d = new Date(ts);
